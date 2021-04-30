@@ -1,0 +1,1159 @@
+---
+title: "Replication Code"
+author: "Sho Miyazaki"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: 
+  bookdown::html_document2:
+    theme: united
+    highlight: tango
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Package  
+
+Since `MASS` and `dplyr` has both `select()` function, there are conflicts. However, I have to use `MASS::polr()` in my extention part, and `stargazer()` shows error in this format unless I change to `library(MASS)` and `polr`. Thus, I used `dplyr::select()` for the `select()` of the original code.  
+
+```{r library, results='hide', message=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(readxl)
+library(stargazer)
+library(ebal) # ebalance()
+library(broom)
+library(cowplot)
+library(MASS)
+library(sjPlot)
+library(knitr)
+```
+
+# step1_estimate_weights
+
+## Population  
+
+### Load Data  
+```{r load_data}
+df_age <- read_excel("data - census/00310_00.xls", sheet = 2)
+df_sex <- read_excel("data - census/00310_00.xls", sheet = 4)
+df_prefecture <- read_excel("data - census/00310_00.xls", sheet = 3)
+df_income1 <- read_excel("data - census/b004_reformatted.xls", sheet = 2)
+df_income2     <- read_excel("data - census/b211.xls", sheet = 2)
+df_education   <- read_excel("data - census/b008_reformatted.xls", sheet = 2)
+```
+
+### `age` Data Frame  
+```{r}
+age <- df_age %>% 
+  mutate(age_group = 0,
+         age_group = ifelse(age < 18, 0, age_group),
+         age_group = ifelse(age >= 18 & age <= 25, 1, age_group),
+         age_group = ifelse(age >= 26 & age <= 35, 2, age_group),
+         age_group = ifelse(age >= 36 & age <= 45, 3, age_group),
+         age_group = ifelse(age >= 46 & age <= 55, 4, age_group),
+         age_group = ifelse(age >= 56 & age <= 65, 5, age_group),
+         age_group = ifelse(age >= 66, 6, age_group)) %>% 
+  filter(age_group != 0) %>% 
+  filter(age != 999) %>% # age unknown
+  group_by(age_group) %>% 
+  summarise(numerator = sum(pop)) %>% 
+  ungroup() %>% 
+  mutate(denominator = sum(numerator),
+         pct_population = numerator / denominator) %>% 
+  rename(age = age_group) %>% 
+  dplyr::select(age, pct_population)
+
+```
+
+### `sex` Data Frame  
+```{r}
+sex <- df_sex %>% 
+  mutate(numerator = pop,
+         denominator = sum(numerator),
+         pct_population = numerator / denominator) %>% 
+  mutate(sex = ifelse(sex == "male", 1, sex),
+         sex = ifelse(sex == "female", 2, sex),
+         sex = as.numeric(sex)) %>% 
+  dplyr::select(sex, pct_population)
+
+```
+
+### `area` Data Frame
+```{r}
+area <- df_prefecture %>%
+  group_by(area) %>% 
+  summarize(pop_area = sum(pop)) %>% 
+  ungroup() %>% 
+  mutate(numerator = pop_area,
+         denominator = sum(numerator),
+         pct_population = numerator / denominator) %>% 
+  ungroup() %>% 
+  mutate(area = ifelse(area == "Hokkaido", 1, area),
+         area = ifelse(area == "Tohoku", 2, area),
+         area = ifelse(area == "Kanto (excluding Tokyo)", 3, area),
+         area = ifelse(area == "Kanto (Tokyo)", 4, area),
+         area = ifelse(area == "Chubu", 5, area),
+         area = ifelse(area == "Kinki", 6, area),
+         area = ifelse(area == "Chugoku", 7, area),
+         area = ifelse(area == "Shikoku", 8, area),
+         area = ifelse(area == "Kyushu-Okinawa", 9, area),
+         area = as.numeric(area)) %>% 
+  dplyr::select(area, pct_population) %>% 
+  arrange(area)
+
+```
+
+### `education` Data Frame    
+```{r}
+education <- df_education %>% 
+  mutate(`pop15-19` = ifelse(is.na(`pop15-19`), 0, `pop15-19`)) %>% 
+  mutate(pop18ov = pop15ov - `pop15-19`) %>% 
+  dplyr::select(-pop15ov, -`pop15-19`) %>% 
+  mutate(education = 0,
+         education = ifelse(school == "Primary school or junior high school", 1, education),
+         education = ifelse(school == "Senior high school", 2, education),
+         education = ifelse(school == "Professional training college", 3, education),
+         education = ifelse(school == "Junior college", 4, education),
+         education = ifelse(school == "College or university", 5, education),
+         education = ifelse(school == "Graduate school", 5, education),
+         education = ifelse(school == "Unknown", 6, education)) %>% 
+  group_by(education) %>% 
+  summarise(pop_school = sum(pop18ov)) %>% 
+  ungroup() %>% 
+  mutate(numerator = pop_school,
+         denominator = sum(numerator),
+         pct_population = numerator / denominator) %>% 
+  dplyr::select(education, pct_population)
+
+```
+
+### `income` Data Frame  
+```{r}
+income <- df_income2 %>% 
+  filter(income != "unknown") %>% # income unknown
+  mutate(income = ifelse(income == "Less than 1 million yen", 1, income),
+         income = ifelse(income == "1 to 1.99 million yen", 1, income),
+         income = ifelse(income == "200-299", 2, income),
+         income = ifelse(income == "300-399", 2, income),
+         income = ifelse(income == "400-499", 3, income),
+         income = ifelse(income == "500-599", 3, income),
+         income = ifelse(income == "600-699", 4, income),
+         income = ifelse(income == "700-799", 4, income),
+         income = ifelse(income == "800-899", 5, income),
+         income = ifelse(income == "900-999", 5, income),
+         income = ifelse(income == "1000-1249", 6, income), # 1000-1199 in our survey
+         income = ifelse(income == "1250-1499", 7, income),
+         income = ifelse(income == "1500-1999", 7, income),
+         income = ifelse(income == "20 million  yen and over", 7, income),
+         income = as.numeric(income)) %>% 
+  group_by(income) %>% 
+  summarise(pop_income = sum(household)) %>% 
+  ungroup() %>% 
+  mutate(numerator = pop_income,
+         denominator = sum(numerator),
+         pct_population = numerator / denominator) %>% 
+  dplyr::select(income, pct_population)
+
+```
+
+## Sample  
+
+### Load Data  
+```{r}
+file <- "data - sample/TrumpJapan_Experiment_in_Japanese, deidentified.csv"
+```
+
+### Subset Data  
+```{r}
+df <- read.csv(file, stringsAsFactors = FALSE) %>% 
+  filter(V10 == 1, # Finished
+         consent == 1, # consent
+         !is.na(income), # 2 respondents chose not to answer this question
+         education != 6) # education == "Other"
+```
+
+### `sample` Data Frame
+```{r}
+sample <- df %>% 
+  dplyr::select(V1, age, sex, area, education, income) %>% 
+  rename(id = V1)
+```
+
+### Test - No Omitted Values  
+```{r}
+which(is.na.data.frame(sample)) # no omitted observations
+```
+
+## Compare Population and Sample  
+
+### Remove Unnecessary Data Fra,e from Environment  
+```{r}
+remove(df_age, df_education, df_income1, df_income2, df_prefecture, df_sex)
+```
+
+### Create Function    
+```{r}
+compare_population_vs_sample <- function(var, pop){
+  
+  sample %>% 
+    select_(var) %>% 
+    group_by_(var) %>% 
+    summarise(numerator = n()) %>% # summarize the number of each category
+    ungroup() %>% 
+    mutate(denominator = sum(numerator),
+           pct_sample = numerator / denominator) %>% # Calculate the ratio
+    left_join(pop) %>% # join two tables of real population
+    rename_(code = var) %>% 
+    mutate(variable = var)
+  
+}
+```
+
+### Create Compare Data Frame      
+```{r}
+comparison <- compare_population_vs_sample("age", age) %>% 
+  bind_rows(compare_population_vs_sample("sex", sex)) %>% 
+  bind_rows(compare_population_vs_sample("area", area)) %>% 
+  bind_rows(compare_population_vs_sample("income", income)) %>% 
+  bind_rows(compare_population_vs_sample("education", education)) %>% 
+  dplyr::select(variable, code, numerator, denominator, pct_sample, pct_population)
+```
+## Recode values to collapse some categories  
+
+### Sample     
+```{r}
+sample <- sample %>%
+  filter(education != 6) %>% # Drop observations if education = "Other"
+  mutate(age = car::recode(age, "4:6 = 4"),
+         area = car::recode(area, "1:2 = 1; 3 = 2; 4 = 3; 5 = 4; 6 = 5; 7:9 = 6"),
+         income = car::recode(income, "5:7 = 5"),
+         education = car::recode(education, "1:2 = 1; 3 = 2; 4 = 3; 5 = 4"))
+```
+
+### Comparision     
+```{r}
+comparison <- comparison %>% 
+  mutate(code2 = code,
+         code2 = ifelse(variable == "age", 
+                        car::recode(code, "4:6 = 4"), code2),
+         code2 = ifelse(variable == "area", 
+                        car::recode(code, "1:2 = 1; 3 = 2; 4 = 3; 5 = 4; 6 = 5; 7:9 = 6"), code2),
+         code2 = ifelse(variable == "income", 
+                        car::recode(code, "5:7 = 5"), code2),
+         code2 = ifelse(variable == "education", 
+                        car::recode(code, "1:2 = 1; 3 = 2; 4 = 3; 5 = 4; 6 = NA"), code2)) %>% 
+  group_by(variable, code2) %>% 
+  summarise_at(c("pct_sample", "pct_population"), sum, na.rm = TRUE) %>% 
+  filter(!is.na(code2)) %>% 
+  group_by(variable) %>% 
+  mutate(total_sample = sum(pct_sample),
+         total_population = sum(pct_population),
+         pct_sample = pct_sample / total_sample,
+         pct_population = pct_population / total_population) %>% 
+  dplyr::select(-contains("total")) %>% 
+  rename(code = code2) %>% 
+  ungroup()
+```
+
+## Entropy Balancing  
+
+### Categirizing Sample Data (except `var` = 1)   
+```{r}
+df1 <- sample %>% 
+  mutate(age2 = ifelse(age == 2, 1, 0),
+         age3 = ifelse(age == 3, 1, 0),
+         age4 = ifelse(age == 4, 1, 0),
+         area2 = ifelse(area == 2, 1, 0),
+         area3 = ifelse(area == 3, 1, 0),
+         area4 = ifelse(area == 4, 1, 0),
+         area5 = ifelse(area == 5, 1, 0),
+         area6 = ifelse(area == 6, 1, 0),
+         education2 = ifelse(education == 2, 1, 0),
+         education3 = ifelse(education == 3, 1, 0),
+         education4 = ifelse(education == 4, 1, 0),
+         income2 = ifelse(income == 2, 1, 0),
+         income3 = ifelse(income == 3, 1, 0),
+         income4 = ifelse(income == 4, 1, 0),
+         income5 = ifelse(income == 5, 1, 0),
+         sex2 = ifelse(sex == 2, 1, 0))
+```
+
+### Categorizing Compare Data  (except `var` = 1)  
+```{r}
+df2 <- comparison %>% 
+  filter(code != 1) %>% 
+  dplyr::select(pct_population) %>% 
+  t() # Flip x and y
+```
+ 
+### Entropy Valancing with `ebalance()`  
+```{r}
+df <- data.frame("treat" = rep(0, nrow(df1))) %>% # a new variable with 0
+  cbind(df1[, -(1:6)]) %>% # delete respondent id and 5 original variables
+  rbind(c(1, df2)) %>% 
+  rbind(c(1, df2)) # A bug in ebalance package: we need to add another row
+
+bal.out <- ebalance(df[, 1], df[, -1],  print.level = 3, constraint.tolerance = 0.00001) # entropy balancing
+```
+
+### Weighting   
+
+Fixed a typo ("obseration" to "obvservation")
+```{r}
+wgt <- bal.out$w / sum(bal.out$w) # calculate the weight for each observation
+```
+
+Modified the codes of the original lines 233 to 237   
+```{r eval=FALSE}
+# Original
+sample_weighted = cbind(sample, wgt)  # add the weight to the survey data
+
+sample_weighted <- sample_weighted %>% 
+  select(id, wgt) %>% 
+  rename(V1 = id)
+```
+
+```{r}
+# Modified  
+sample_weighted <- cbind(sample, wgt) %>% 
+  dplyr::select(id, wgt) %>% 
+  rename(V1 = id)
+```
+
+## Cleaning the Environment and Saving as a R.data    
+```{r}
+rm(list= ls()[!(ls() %in% c("sample_weighted"))]) 
+```
+
+
+# step2_clean_data  
+
+## Load Data  
+```{r}
+file <- "data - sample/TrumpJapan_Experiment_in_Japanese, deidentified.csv"  
+df <- read.csv(file, stringsAsFactors = FALSE) %>% 
+  filter(V10 == 1, 
+         !is.na(income),
+         education != 6,
+         consent == 1) %>% 
+  left_join(sample_weighted, by = "V1")
+remove(sample_weighted, file)
+```
+
+## Clean Variables  
+```{r}
+df <- df %>% 
+  mutate(source = NA,
+         content = NA,
+         issue = NA,
+         source = ifelse(!is.na(cxhxs) | 
+                         !is.na(cxfxs) | 
+                         !is.na(cxhxe) | 
+                         !is.na(cxfxe),
+                         0, 
+                         source),
+         source = ifelse(!is.na(txhxs) |
+                         !is.na(txfxs) |
+                         !is.na(txhxe) |
+                         !is.na(txfxe),
+                         1, 
+                         source),
+         content  = ifelse(!is.na(txfxs) |
+                           !is.na(cxfxs) |
+                           !is.na(txfxe) |
+                           !is.na(cxfxe),
+                           0,
+                           content),
+         content  = ifelse(!is.na(txhxs) |
+                           !is.na(cxhxs) |
+                           !is.na(txhxe) |
+                           !is.na(cxhxe), 
+                           1,
+                           content),
+         issue  = ifelse(!is.na(txhxe) | 
+                         !is.na(txfxe) |
+                         !is.na(cxhxe) | 
+                         !is.na(cxfxe),
+                         0, 
+                         issue),
+         issue  = ifelse(!is.na(txhxs) |
+                         !is.na(txfxs) |
+                         !is.na(cxhxs) |
+                         !is.na(cxfxs),
+                         1,
+                         issue)) %>%
+  mutate(compfav = (as.numeric(countryfav) + 
+                      as.numeric(policyfav) + 
+                      as.numeric(peoplefav) + 
+                      as.numeric(trumpfav)) / 4) %>% 
+  mutate(eightgroup = NA,
+         eightgroup = ifelse(txhxs == 1 & !is.na(txhxs), 1, eightgroup),
+         eightgroup = ifelse(txfxs == 1 & !is.na(txfxs), 2, eightgroup),
+         eightgroup = ifelse(cxhxs == 1 & !is.na(cxhxs), 3, eightgroup),
+         eightgroup = ifelse(cxfxs == 1 & !is.na(cxfxs), 4, eightgroup),
+         eightgroup = ifelse(txhxe == 1 & !is.na(txhxe), 5, eightgroup),
+         eightgroup = ifelse(txfxe == 1 & !is.na(txfxe), 6, eightgroup),
+         eightgroup = ifelse(cxhxe == 1 & !is.na(cxhxe), 7, eightgroup),
+         eightgroup = ifelse(cxfxe == 1 & !is.na(cxfxe), 8, eightgroup),
+         eightgroup = factor(eightgroup,
+                             levels = 1:8,
+                             labels = c("Trump, Uncooperative, Security",
+                                        "Trump, Cooperative, Security",
+                                        "Congressman, Uncooperative, Security",
+                                        "Congressman, Cooperative, Security",
+                                        "Trump, Uncooperative, Exchange",
+                                        "Trump, Cooperative, Exchange",
+                                        "Congressman, Uncooperative, Exchange",
+                                        "Congressman, Cooperative, Exchange"))) %>%
+   mutate(attentive = ifelse(screener_1 == 1 & screener_3 == 1, 1, 0)) 
+```
+
+## Make Various Subsets of data  
+```{r}
+all <- df
+
+attentive <- filter(df, attentive == 1)
+
+multilat1_hig <- filter(df, multilat1 <  median(multilat1)) # Agree
+multilat1_low <- filter(df, multilat1 >= median(multilat1)) # Otherwise
+
+multilat2_hig <- filter(df, multilat2 <  median(multilat2)) # Agree
+multilat2_low <- filter(df, multilat2 >= median(multilat2)) # Othewise
+
+abe_hig <- filter(df, abe > median(abe)) # Approve or Tend to approve
+abe_low <- filter(df, abe <=  median(abe)) # Otherwise
+
+party_ldp <- filter(df, party == 1) # Support LDP
+party_etc <- filter(df, party != 1) # Otherwise
+
+interest_hig <- filter(df, interest >  median(interest)) # Have interest
+interest_low <- filter(df, interest <= median(interest)) # Otherwise
+
+age_old <- filter(df, age >  median(age)) # 36 or older
+age_yng <- filter(df, age <= median(age)) # 18-35
+
+sex_m <- filter(df, sex == 1) # Male
+sex_f <- filter(df, sex == 2) # Female
+
+educ_hig <- filter(df, education == 5) # College degree, or higher
+educ_low <- filter(df, education != 5) # Othewise, including "I don't know"
+
+income_hig <- filter(df, income >= median(income)) # 6 million yen or higher
+income_low <- filter(df, income < median(income)) # Otherwise
+```
+
+# step3_test_hypotheses  
+
+## Hypothesis 1  
+```{r}
+test1 <- function(data, model, title = NULL, weight = FALSE){
+  
+  df <- data
+  df_name <- deparse(substitute(data)) # name of the data frame
+  
+  if (weight == FALSE){
+    out <- lm(as.formula(model), data = df)
+  } else if (weight == TRUE) {
+    out <- lm(as.formula(model), data = df, weight = df$wgt)
+  } else{
+    print("Specify whether you use weights")
+  }
+
+
+  out2 <- tidy(out)
+  
+  # table 1 for coefficiemt table
+  table1 <- bind_rows(
+    data.frame(
+      level = "Congressman",
+      variable = "Source Cue",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] 
+    ),
+    data.frame(
+      level = "Trump",
+      variable = "Source Cue",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        1 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] 
+    ),
+    data.frame(
+      level = "Coorperative",
+      variable = "Policy Content",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] 
+    ),
+    data.frame(
+      level = "Uncooperative",
+      variable = "Policy Content",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        1 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] 
+    ),
+    data.frame(
+      level = "Exchange",
+      variable = "Issue Salience",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] 
+    ),
+    data.frame(
+      level = "Security",
+      variable = "Issue Salience",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        1 * out2$estimate[(out2$term == "issue")] 
+    )
+  ) 
+  
+  # table 2 for statistical information  
+  table2 <- bind_rows(
+    data.frame(
+      variable = "Source Cue",
+      diff = tidy(out)$estimate[2],
+      stat = tidy(out)$statistic[2],
+      p    = tidy(out)$p.value[2]
+    ),
+    data.frame(
+      variable = "Policy Content",
+      diff = tidy(out)$estimate[3],
+      stat = tidy(out)$statistic[3],
+      p    = tidy(out)$p.value[3]
+    ),
+    data.frame(
+      variable = "Issue Salience",
+      diff = tidy(out)$estimate[4],
+      stat = tidy(out)$statistic[4],
+      p    = tidy(out)$p.value[4]
+    )
+  ) 
+  
+  # combine tables with p-value and statistical stars
+  table <- left_join(table1, table2) %>% 
+    mutate(max_height = max(mean),
+           trump_color = ifelse(level == "Trump", TRUE, FALSE),
+           sig = "",
+           sig = ifelse(p < 0.05, "*", sig),
+           sig = ifelse(p < 0.01, "**", sig),
+           sig = ifelse(p < 0.001, "***", sig),
+           diff = round(diff, 2) %>% format(),
+           stat = round(stat, 2) %>% format() %>% str_trim(),
+           sig_color = ifelse(p < 0.05, TRUE, FALSE),
+           diff = paste0(diff, sig),
+           stat = paste0("(", stat, ")"))
+  
+  # max p-value
+  max_p <- max(table$p, na.rm = TRUE)
+
+  # plot  
+  g <- ggplot(table) +
+    # Theme based on Few's "Practical Rules for Using Color in Charts"
+    theme_few() +
+    # set the range of data
+    coord_cartesian(ylim = c(1, 5)) + 
+    # the default scales for continuous y aesthetics
+    scale_y_continuous(breaks = 1:5,
+                       labels = c("Most favorable (1)", "",
+                                  "Neither (3)", "",
+                                  "Most unfavorable (5)")) +
+    # wraps a 1d sequence of panels into 2d
+    facet_wrap(~ factor(variable,
+                        levels = c("Source Cue", 
+                                   "Policy Content",
+                                   "Issue Salience")),
+               nrow = 1, 
+               scales = "free_x") +
+    # heights of the bars to represent values in the data
+    geom_col(aes(x = level, 
+                 y = mean,
+                 fill = trump_color),
+             color = "grey70") +
+    # draws a straight line between points (x, y) and (xend, yend)
+    geom_segment(aes(x    = level, 
+                     xend = level, 
+                     y    = mean + 0.2, 
+                     yend = max_height + 0.4,
+                     color = sig_color)) +
+    geom_segment(aes(x    = 1,
+                     xend = 2,
+                     y    = max_height + 0.4,
+                     yend = max_height + 0.4,
+                     color = sig_color)) +
+    # labeling plots
+    geom_text(aes(x = 1.5,
+                  y = max_height + 0.8,
+                  label = diff,
+                  color = sig_color),
+              size = 4) +
+    geom_text(aes(x = 1.5,
+                  y = max_height + 0.6,
+                  label = stat,
+                  color = sig_color),
+              size = 4) +
+    # set fill color
+    scale_fill_manual(values = c("white", "grey70")) +
+    labs(y = "Unfavorability Score", 
+         x = " ") +
+    # Guides for each scale can be set scale-by-scale with the guide argument
+    guides(fill = FALSE,
+           color = FALSE) +
+    labs(title = title) +
+    NULL
+
+  if (max_p < 0.05) {
+    g <- g + scale_color_manual(values = c("red"))
+  } else {
+    g <- g + scale_color_manual(values = c("black", "red"))
+  }
+}
+```
+
+## Hypothesis 2   
+```{r}
+test2 <- function(data, model, title = NULL, weight = FALSE){
+  
+  df <- data
+  df_name <- deparse(substitute(data))
+  
+  if (weight == FALSE){
+    out <- lm(as.formula(model), data = df)
+  } else if (weight == TRUE) {
+    out <- lm(as.formula(model), data = df, weight = df$wgt)
+  } else{
+    print("Specify whether you use weights")
+  }
+  
+  coef1 <- coef(out)["source"]
+  coef2 <- coef(out)["source"] + coef(out)["source:issue"]
+  coef3 <- coef(out)["source"]                             + coef(out)["source:content"]
+  coef4 <- coef(out)["source"] + coef(out)["source:issue"] + coef(out)["source:content"]
+  # for F-static
+  lincom1 <- car::linearHypothesis(out, "1 * source + 0 * content + 0 * issue + 0 * source:content + 0 * source:issue")
+  lincom2 <- car::linearHypothesis(out, "1 * source + 0 * content + 1 * issue + 0 * source:content + 1 * source:issue")
+  lincom3 <- car::linearHypothesis(out, "1 * source + 1 * content + 0 * issue + 1 * source:content + 0 * source:issue")
+  lincom4 <- car::linearHypothesis(out, "1 * source + 1 * content + 1 * issue + 1 * source:content + 1 * source:issue")
+  
+  out2 <- tidy(out) 
+  
+  table1 <- bind_rows(
+    data.frame(
+      source = "Congressman",
+      condition = "Policy Content: Cooperative \nIssue Salience: Exchange",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] +
+        0 * out2$estimate[(out2$term == "source:content")] +
+        0 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Trump",
+      condition = "Policy Content: Cooperative \nIssue Salience: Exchange",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        1 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] +
+        0 * out2$estimate[(out2$term == "source:content")] +
+        0 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Congressman",
+      condition = "Policy Content: Cooperative \nIssue Salience: Security",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        1 * out2$estimate[(out2$term == "issue")] +
+        0 * out2$estimate[(out2$term == "source:content")] +
+        0 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Trump",
+      condition = "Policy Content: Cooperative \nIssue Salience: Security",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        1 * out2$estimate[(out2$term == "source")] +
+        0 * out2$estimate[(out2$term == "content")] +
+        1 * out2$estimate[(out2$term == "issue")] +
+        0 * out2$estimate[(out2$term == "source:content")] +
+        1 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Congressman",
+      condition = "Policy Content: Uncooperative \nIssue Salience: Exchange",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        1 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] +
+        0 * out2$estimate[(out2$term == "source:content")] +
+        0 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Trump",
+      condition = "Policy Content: Uncooperative \nIssue Salience: Exchange",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        1 * out2$estimate[(out2$term == "source")] +
+        1 * out2$estimate[(out2$term == "content")] +
+        0 * out2$estimate[(out2$term == "issue")] +
+        1 * out2$estimate[(out2$term == "source:content")] +
+        0 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Congressman",
+      condition = "Policy Content: Uncooperative \nIssue Salience: Security",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        0 * out2$estimate[(out2$term == "source")] +
+        1 * out2$estimate[(out2$term == "content")] +
+        1 * out2$estimate[(out2$term == "issue")] +
+        0 * out2$estimate[(out2$term == "source:content")] +
+        0 * out2$estimate[(out2$term == "source:issue")]
+    ),
+    data.frame(
+      source = "Trump",
+      condition = "Policy Content: Uncooperative \nIssue Salience: Security",
+      mean = 
+        1 * out2$estimate[(out2$term == "(Intercept)")] +
+        1 * out2$estimate[(out2$term == "source")] +
+        1 * out2$estimate[(out2$term == "content")] +
+        1 * out2$estimate[(out2$term == "issue")] +
+        1 * out2$estimate[(out2$term == "source:content")] +
+        1 * out2$estimate[(out2$term == "source:issue")]
+    )
+  ) 
+  
+  table2 <- bind_rows(
+    data.frame(
+      condition = "Policy Content: Cooperative \nIssue Salience: Exchange",
+      diff = coef1,
+      # F-static
+      stat = lincom1$F[2],
+      p    = lincom1$`Pr(>F)`[2]
+    ),
+    data.frame(
+      condition = "Policy Content: Cooperative \nIssue Salience: Security",
+      diff = coef2,
+      stat = lincom2$F[2],
+      p    = lincom2$`Pr(>F)`[2]
+    ),
+    data.frame(
+      condition = "Policy Content: Uncooperative \nIssue Salience: Exchange",
+      diff = coef3,
+      stat = lincom3$F[2],
+      p    = lincom3$`Pr(>F)`[2]
+    ),
+    data.frame(
+      condition = "Policy Content: Uncooperative \nIssue Salience: Security",
+      diff = coef4,
+      stat = lincom4$F[2],
+      p    = lincom4$`Pr(>F)`[2]
+    )
+  )
+  
+  table <- table1 %>% 
+    left_join(table2) %>% 
+    mutate(max_height = max(mean),
+           trump_color = ifelse(source == "Trump", TRUE, FALSE),
+           sig = "",
+           sig = ifelse(p < 0.05, "*", sig),
+           sig = ifelse(p < 0.01, "**", sig),
+           sig = ifelse(p < 0.001, "***", sig),
+           diff = round(diff, 2) %>% format(),
+           stat = round(stat, 2) %>% format() %>% str_trim(),
+           sig_color = ifelse(p < 0.05, TRUE, FALSE),
+           max_height = max(mean),
+           diff = paste0(diff, sig),
+           stat = paste0("(", stat, ")"))
+  
+  max_p <- max(table$p, na.rm = TRUE)
+  
+  g <- 
+    ggplot(table) +
+    theme_few() +
+    coord_cartesian(ylim = c(1, 5)) +
+    scale_y_continuous(breaks = 1:5,
+                       labels = c("Most favorable (1)", "",
+                                  "Neither (3)", "",
+                                  "Most unfavorable (5)")) +
+    facet_wrap(~ condition, nrow = 1) +
+    geom_col(aes(x = source, 
+                 y = mean,
+                 fill = trump_color),
+             color = "grey70") +
+    geom_segment(aes(x    = source,
+                     xend = source,
+                     y    = mean + 0.2,
+                     yend = max_height + 0.4,
+                     color = sig_color)) +
+    geom_segment(aes(x    = 1,
+                     xend = 2,
+                     y    = max_height + 0.4,
+                     yend = max_height + 0.4,
+                     color = sig_color)) +
+    geom_text(aes(x = 1.5,
+                  label = diff,
+                  color = sig_color,
+                  y = max_height + 0.8),
+              size = 4) +
+    geom_text(aes(x = 1.5,
+                  y = max_height + 0.6,
+                  label = stat,
+                  color = sig_color),
+              size = 4) +
+    scale_fill_manual(values = c("white", "grey70")) +
+    labs(y = "Unfavorability Score",
+         x = " ") +
+    guides(fill = FALSE,
+           color = FALSE) +
+    labs(title = title) +
+    NULL
+  
+  if (max_p < 0.05) {
+    g <- g + scale_color_manual(values = c("red"))
+  } else {
+    g <- g + scale_color_manual(values = c("black", "red"))
+  }
+
+}
+```
+
+## Function for Graphs for H1 and H2      
+```{r}
+make_graphs <- function(data, outcome, weight = FALSE){
+  
+  df_name <- deparse(substitute(data))
+  
+  # paste0(…, collapse) is equivalent to paste(…, sep = "", collapse)
+  h1 <- paste0(outcome, " ~ source + content + issue")
+  h2 <- paste0(outcome, " ~ source * content + source * issue")
+  
+  g1b <- test1(data, h1, title = "Hypothesis 1", weight = weight)
+  g2b <- test2(data, h2, title = "Hypothesis 2", weight = weight)
+
+  g <- plot_grid(g1b, g2b, 
+                 ncol = 1, 
+                 rel_heights = c(0.95, 1))
+}
+
+  make_graphs2 <- function(data, weight = FALSE){
+  
+  df <- data
+  df_name <- deparse(substitute(data))
+  
+  g1 <- g2 <- NULL
+  
+  for (i in c("compfav", "countryfav", "policyfav", "peoplefav", "trumpfav")){
+    
+    h1 <- paste0(i, " ~ source + content + issue")
+    h2 <- paste0(i, " ~ source * content + source * issue")
+    
+    if (i == "compfav"){
+      title <- "Composite"
+    } else if (i == "countryfav"){
+      title <- "United States"
+    } else if (i == "policyfav"){
+      title <- "U.S. Policy"
+    }  else if (i == "peoplefav"){
+      title <- "Americans"
+    }  else if (i == "trumpfav"){
+      title <- "Donald Trump"
+    }  
+    
+    g1[[i]] <- test1(df, h1, title = title, weight = weight)
+    g2[[i]] <- test2(df, h2, title = title, weight = weight)
+    
+  }
+  
+  merged_g1 <- plot_grid(g1[[1]], g1[[2]], g1[[3]], g1[[4]], g1[[5]], ncol = 1)
+  merged_g2 <- plot_grid(g2[[1]], g2[[2]], g2[[3]], g2[[4]], g2[[5]], ncol = 1)
+  
+}
+```
+
+# Analysis  
+
+## Create Plot   
+
+### Linear Regression    
+```{r}
+h1 <- "compfav ~ source + content + issue"
+h2 <- "compfav ~ source * content + source * issue"
+```
+
+### Formula    
+```{r}
+g_h1 <- test1(all, h1, title = NULL, weight = FALSE)
+g_h2 <- test2(all, h2, title = NULL, weight = FALSE)
+```
+
+### Display   
+```{r}
+g_h1
+g_h2
+```
+
+## Regression Table 
+
+### Linear Regression    
+```{r}
+h1out <- lm(as.formula(h1), data = all)
+h2out <- lm(as.formula(h2), data = all)
+```
+
+### Formula  
+```{r}
+reg.table <- function(type){
+  
+stargazer(h1out, h2out, 
+          covariate.labels = c("Constant",
+                               "Source Cue",
+                               "Policy Content",
+                               "Issue Salience",
+                               "Source Cue $\\times$ Policy Content",
+                               "Source Cue $\\times$ Issue Salience"),
+          dep.var.caption  = NULL,
+          dep.var.labels.include = FALSE,
+          column.labels = c("Hypothesis 1", "Hypothesis 2"),
+          model.numbers = FALSE,
+          intercept.top = TRUE,
+          intercept.bottom = FALSE,
+          no.space = TRUE,
+          df = FALSE,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          header = FALSE,
+          type = type)
+}
+```
+
+### Output
+```{r results='asis'}
+# "latex" for pdf
+reg.table("html")
+```
+
+
+# Extention  
+
+## Proportional Odds Logistic Regression   
+
+The outcome variable (`compfav`: the mean of the 4 categorical predictors) of models in the  [@agadjanianHasTrumpDamaged2020a] is inappropriate since its components (`countryfav`, `policyfav`, `peoplefav`, and `trumpfav`) are ordered categorical data with unequal intervals. Therefore, this extension part examines the ordered categorical regression models.   
+
+## Factorizing Data  
+```{r}
+# options for polr
+options(contrasts = rep ("contr.treatment", 2))
+
+df_ext <- df 
+df_ext$nwgt <- df_ext$wgt * nrow(df_ext)
+
+for (i in c("countryfav", "policyfav", "peoplefav", "trumpfav")){
+  
+  level_key <- c( "5" = "5. most unfavorable",
+                "4" = "4. unfavorable",
+                "3" = "3. neutral",
+                "2" = "2. favorable",
+                "1" = "1. most favorable")
+  
+  df_ext[,i] <- factor(df_ext[,i], 
+           levels = c(5,4,3,2,1),
+           labels = level_key, 
+           ordered = TRUE)
+}
+
+
+df_ext$source <- as.factor(df_ext$source)
+df_ext$content <- as.factor(df_ext$content)
+df_ext$issue <- as.factor(df_ext$issue)
+
+```
+
+## `polr` for Hypothesis 1  
+
+```{r}
+ext_h1_country <- polr(countryfav ~ source + content + issue,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h1_policy <- polr(policyfav ~ source + content + issue,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h1_people <- polr(peoplefav ~ source + content + issue,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h1_trump <- polr(trumpfav ~ source + content + issue,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+
+```
+
+```{r results='asis'}
+stargazer(ext_h1_country, ext_h1_policy, ext_h1_people, ext_h1_trump,
+          ord.intercepts = TRUE,
+          title="`polr` Model for Hypotheis 1", 
+          dep.var.caption="Outcome Variable:",
+          model.numbers=FALSE,
+          model.names = FALSE,
+          header = FALSE,
+          type = "html")
+```
+
+## Coefficient Plot  
+
+```{r}
+ex1mods <- c("ext_h1_country", "ext_h1_policy", "ext_h1_people", "ext_h1_trump")
+
+plot_tab <- data.frame()
+for (m in ex1mods){
+  mod <- get(m) # get() is to get the object by its name
+  summ <- summary(mod) # summary the model
+  plot_tab <- as.data.frame(rbind(plot_tab, 
+                                  cbind(summ$coefficients[4:7,1:2], 
+                                        m, 
+                                        rownames(summ$coefficients[4:7,1:2]))))
+  # cbind() adds additional columns (1) which model (2) which variable
+  # rbind() combines the results with previous model
+}
+
+colnames(plot_tab) <- c("est", "se", "model", "vars")
+plot_tab$est <- as.numeric(plot_tab$est)
+plot_tab$se <- as.numeric(plot_tab$se)
+
+ggplot(data = plot_tab, aes(x = vars, y = est, color = model)) +
+  geom_pointrange(aes(ymin = est - 1.96*se, ymax = est + 1.96*se), # 95% confidence interval
+                  position = position_dodge(width = 1), fatten = 2, size = 1) +
+  geom_pointrange(aes(ymin = est - 2.57*se, ymax = est + 2.57*se), # 99% confidence interval
+                  position = position_dodge(width = 1), fatten = 2, size = 0.5) +
+  coord_flip()
+```
+
+
+## `polr` for Hypothesis 2  
+
+### Source x Content  
+```{r}
+ext_h2_country1 <- polr(countryfav ~ source * content,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h2_policy1 <- polr(policyfav ~ source * content,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h2_people1 <- polr(peoplefav ~ source * content,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h2_trump1 <- polr(trumpfav ~ source * content,
+                     data=df_ext,
+                     Hess = TRUE,
+                     weights=nwgt,
+                     method = "logistic")
+
+```
+
+```{r results='asis'}
+stargazer(ext_h2_country1, ext_h2_policy1, ext_h2_people1, ext_h2_trump1,
+          ord.intercepts = TRUE,
+          title="`polr` Model for Hypothesis 2", 
+          dep.var.caption="Outcome Variable:",
+          model.numbers=FALSE,
+          model.names = FALSE,
+          header = FALSE,
+          type = "html")
+```
+
+
+```{r}
+plot_model(ext_h2_country1, type = "int")
+plot_model(ext_h2_people1, type = "int")
+plot_model(ext_h2_policy1, type = "int")
+plot_model(ext_h2_trump1, type = "int")
+```
+
+```{r}
+extlmh21 <- lm(compfav ~ source * content, data = df_ext)
+
+plot_model(extlmh21, 
+                   type = "int", 
+                   terms = c("source", "content"))
+```
+
+
+
+### Source x Issue    
+```{r}
+ext_h2_country2 <- polr(countryfav ~ source * issue,
+                     data=df_ext,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h2_policy2 <- polr(policyfav ~ source * issue,
+                     data=df_ext,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h2_people2 <- polr(peoplefav ~ source * issue,
+                     data=df_ext,
+                     weights=nwgt,
+                     method = "logistic")
+ext_h2_trump2 <- polr(trumpfav ~ source * issue,
+                     data=df_ext,
+                     weights=nwgt,
+                     method = "logistic")
+
+```
+
+```{r results='asis'}
+stargazer(ext_h2_country2, ext_h2_policy2, ext_h2_people2, ext_h2_trump2,
+          ord.intercepts = TRUE,
+          title="`polr` Model for Hypothesis 2", 
+          dep.var.caption="Outcome Variable:",
+          model.numbers=FALSE,
+          model.names = FALSE,
+          header = FALSE,
+          type = "html")
+```
+
+```{r}
+rm(list= ls()[!(ls() %in% c("all", 
+                            "df_ext", 
+                            "g_h1",
+                            "g_h2",
+                            "reg.table",
+                            "h1out",
+                            "h2out"))])
+save.image("codeoutput.Rdata")
+```
+
+
+
