@@ -1,1 +1,1 @@
-# -Replication_Data_for_Agadjanian_Horiuchi_2020
+# Replication_Agadjanian_Horiuchi_2020
