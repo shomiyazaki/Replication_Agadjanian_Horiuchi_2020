@@ -24,7 +24,7 @@ The Rmd. for the pdf output report
 ### Replicarion Report.pdf  
 The replication report  
 
-## Files by Authors (Agadjanian and Horiuchi)
+## Files from Authors (Agadjanian and Horiuchi)
 ### [folder] data - census   
 This folder contains original and modified Japanese Census data, as well as a ReadMe file (in Japanese).
 
