@@ -3,7 +3,7 @@ Replication package of "Gov52 Replication Project: "Has Trump Damaged U.S. Image
 
 # Author  
 ## Name  
-Sho Miyzaki
+Sho Miyazaki
 ## Affiliation  
 Harvard College  
 
