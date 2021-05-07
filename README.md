@@ -1,5 +1,5 @@
 # Title
-Replication package of "Gov52 Replication Project: "Has Trump Damaged U.S. Imaged Abroad? Decomposing the Effects of Policy Messages on Foreign Public Opinion (Agadjanian and Horiuchi 2020)
+Replication package of "Gov52 Replication Project: "Has Trump Damaged U.S. Imaged Abroad?(Agadjanian and Horiuchi 2020) with the Extended Analysis Using `polr` Ordered Multinomial Logistic Regression Model.   
 
 # Author  
 ## Name  
@@ -7,20 +7,32 @@ Sho Miyzaki
 ## Affiliation  
 Harvard College  
 
+# Acknowledgement 
+I would sincerely thank Professor Yusaku Horiuchi and Alexander Agadjanian for making the data and codes publicly available. I also thank Professor Horiuchi for willingly consent my replication.
+
+I would also sincerely thank Professor Jefferson Gill, Le Bao (Teaching Fellow), Miroslav Bergam (Course Assistant), and Yao Yu (Course Assistant) for superb teaching and supports in this class, Gov52 Models. 
+
 # Description  
-abstract... and thank authors
+This is the replication report of the work by Agadjanian and Horiuchi (2020), which finds that "foreign citizens rely more on policy content in transnational opinion formation --- an aspect that past research in this area has overlooked(p.2)." 
+
+After successfully replicating the models and results, this report extends the analysis to examine the validity of the models used in the original work. The `polr` ordered multinomial logistic regression models are applied, and visualized graphically with the confidence intervals, instead of p-value tests. Ultimately, I reach the same conclusion with @paper, while pointing out the concerns for the modeling. 
+  
+ This paper serves as one of the validation analyses of Agadjanian and Horiuchi (2020). 
 
 # Files included in this compressed replication package  
 
 ## Files by Replicator (Miyazaki)  
+
 ### README.md  
 This file  
 
 ### Replication Code.Rmd  
-The all code for replication and extension  
+The all code for replication and extension.
+The replication part refers step1 to step3 of the codes by Agadjanian and Horiuchi (2020). 
 
 ### Replication Report.Rmd  
 The Rmd. for the pdf output report  
+
 ### Replicarion Report.pdf  
 The replication report  
 
@@ -76,4 +88,4 @@ This folder contains the survey data downloaded from Qualtrics and the codebook.
 - All data are de-identified. (Agadjanian and Horiuchi)  
 
 # Most recent date of successful replication  
-May 5, 2021  
+May 7, 2021  

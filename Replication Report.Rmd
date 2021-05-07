@@ -1,0 +1,236 @@
+---
+title: |  
+  Gov52 Replication Project^[
+  I would sincerely thank Professor Jefferson Gill, Le Bao (Teaching Fellow), Miroslav Bergam (Course Assistant), and Yao Yu (Course Assistant) for superb teaching and supports in this class. ]
+subtitle: |  
+  Replicating "Has Trump Damaged U.S. Imaged Abroad? [@paper]" ^[
+  I would sincerely thank Professor Yusaku Horiuchi and Alexander Agadjanian for making the data and codes publicly available [@data]. I also thank Professor Horiuchi for willingly consent my replication. ]    
+  with the Extended Analysis Using `polr` Ordered Multinomial Logistic Regression Model 
+author: |
+  Sho Miyazaki^[Visiting Undergraduate Student, Harvard College. B.A. Candidate, Keio University. \newline Email: [sho\_miyazaki@college.harvard.edu](sho_miyazaki@college.harvard.edu) or [sho.miyazaki.2000@gmail.com](sho.miyazaki.2000@gmail.com)]
+date: "07 May, 2021"
+output:
+  bookdown::pdf_document2:
+    keep_tex: false
+    toc: false
+    number_sections: true
+header-includes:
+    - \usepackage{setspace}\doublespacing
+    - \setlength\parindent{24pt}
+    - \setlength{\footnotesep}{\baselineskip}
+bibliography: bibliography.bib
+csl: apa.csl
+link-citations: yes
+abstract: |
+  This is the replication report of the work by @paper, which finds that "foreign citizens rely more on policy content in transnational opinion formation --- an aspect that past research in this area has overlooked[@paper, p.2]." \newline 
+  After successfully replicating the models and results, this report extends the analysis to examine the validity of the models used in the original work. The `polr` ordered multinomial logistic regression models are applied, and visualized graphically with the confidence intervals, instead of p-value tests. Ultimately, I reach the same conclusion with @paper, while pointing out the concerns for the modeling. \newline 
+  This paper serves as one of the validation analyses of @paper. 
+   \newpage
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+options(width = 100)
+```
+
+```{r include=FALSE, warning=FALSE, message=FALSE}
+library(MASS)
+library(stargazer)
+library(tidyverse)
+library(sjPlot)
+library(cowplot)
+
+load("tablesfigures.Rdata")
+```
+
+# Introduction  
+The main finding by @paper is that the formation of foreign opinion is more influenced by source content than source cue. 
+They conducted an online randomized survey experiment conducted in Japan.
+The observed outcome is the degree of unfavorability, using the Likert scale.
+The analytic method they applied is the linear regression models with ordinary least squares with interactions.  
+
+I successfully replicated the results by using data and referencing codes stored and publicly available in Harvard Dataverse [@data].
+My extension analysis focuses on model selection.
+Since the outcome variable is categorical, it is necessary to examine whether intervals are in an equidistant manner to clarify the validity of the OLS linear regression model used by @paper.
+Thus, the proportional odds logistic regression (`polr`) is used in the extended hypotheses testing.
+My replication and extension analysis was done in `R` and is publicly accessible via my GitHub page^[https://github.com/shomiyazaki2000/Replication_Agadjanian_Horiuchi_2020].
+
+The results of @paper and my extended analysis reach the same conclusion that "while the source cue (Trump attribution) causes negative perceptions of the U.S., the policy content (cooperative vs. uncooperative) has a larger effect in shaping opinion of the U.S. Furthermore, analysis of interaction effects shows that only when U.S. policy approach is uncooperative does the Trump attribution have significantly negative and large effects. [@paper, p.2]"
+
+# Literature Review    
+@paper examines whether the prior U.S. President Trump has damaged the U.S. image abroad by conducting a survey experiment exposing citizens to U.S. policy messages that varied by source (1 = President Trump, 0 = anonymous U.S. congressman), policy content (1 = hostile, 0 = friendly), and issue salience (1 = security, 0 = educational/cultural exchange)". 
+The online randomized survey experiment experiment participants were subjected to read two-sentence policy message which are "randomly assigned with equal probability to one of eight treatment conditions [@paper, p.13]".
+The sample were post-stratified weighted by entropy balancing. 
+
+The analyzing method used is "ordinary least square regressions"(20) and the outcome variable is "degree of *un*favorability ... ranging from 1 (most favorable) to 5 (most unfavorable)" (20). The paper examined two hypotheses:
+
+### Hypothesis 1 {-}  
+>In an additive model, $y = \beta{_0}+\beta{}_1\cdot{}Source\ Cue + \beta{_2} \cdot Policy \ Content + \beta{_3} \cdot Issue \ Salience + \epsilon$, the estimated coefficients for the three treatment variables, $\hat{\beta{_1}}$, $\hat{\beta{_2}}$, and $\hat{\beta{_3}}$ are all positive.
+
+### Hypothesis 2 {-}  
+>In a two-way interaction model, $y =  b_0 + b_1 \cdot Source \ Cue + b_2 \cdot Policy \ Content + b_3 \cdot Issue \ Salience + b_4 \cdot Source \ Cue \cdot Policy \ Content + b_5 \cdot Source \ Cue \cdot Issue \ Salience + \epsilon$ , the estimated coefficients for the two interaction variables, $\hat{b{_4}}$ and $\hat{b{_5}}$, are nil, while $\hat{b{_1}}$ is positive.
+
+After the statistical analysis using a linear regression model with OLS, @paper found that "the policy content treatment ... has the strongest and most consistent effects in influencing Japanese opinion of the U.S.[, and the] analysis of an interaction model shows that a significant negative source cue effect ... is present only when the policy content is uncooperative, making it conditional in nature (28)."
+Thus, @paper concluded that "Trump has not irreparably damaged the U.S. image abroad" (2).   
+
+# Replication   
+This report successfully replicates the results of the two hypothesis testing in the main text of @paper. 
+By referencing `step1` to `step3` of the scripts of @data, following Table 1 and Figure 1 were replicated. 
+The regression table is printed on page 23 and the right plot (Testing Hypothesis 2) is on page 26, whereas the left plot (Testing Hypothesis 1) is not printed in the original manuscript. 
+
+I intentionally avoided removing p-value and its significant stars, because the analysis in @paper relies on it.
+This topic will be discussed in the following extention section.  
+
+```{r results='asis'}
+reg.table("latex")
+```
+
+```{r fig.cap="Replicated Plots for Testing Hypotheses 1 and 2.", fig.show="hold", out.width="50%"}
+ggdraw(add_sub(g_h1, "Note: The numbers in parentheses are F statistics. \n * p < 0.05, ** p < 0.01, *** p < 0.001 (two sided)", size = 10))
+ggdraw(add_sub(g_h2 + theme(text=element_text(size=9)), "Note: The numbers in parentheses are F statistics. \n * p < 0.05, ** p < 0.01, *** p < 0.001 (two sided)", size = 10))
+```
+
+\newpage
+
+# Extention  
+
+## Objectives  
+This paper extends @paper by using the proportional odds logistic regression (`polr`) model.
+The primary reason for applying this ordered multinomial logistic model is that the outcome variable, the Likert Scale, is categorical, and its intervals are not always equally separated. 
+As @mckelvey1975statistical discussed that "[t]he assumptions underlying the multivariate linear model require interval level measurement of dependent variable [@mckelvey1975statistical, p.103]," the linear regression model with OLS cannot be the most accurate method in this dataset.
+
+Additionally, this section does not use p-value as a measure of statistical significance, by reflecting that "*Political Analysis* [is no longer] reporting p-values in regression tables or elsewhere ... [because] a p-value simply does not give adequate evidence in support of a given model or the associated hypotheses [@gill, p.1]".
+Moreover, as @pvalue [p.10] advises that "[d]o not use p-values, unless you have clearly thought about the need to use them and they still seem the best choice", I tried the other interpretation method.
+Specifically, instead of p-values, the following section uses graphical visualization with confidence intervals. 
+
+## Methods  
+The predictors of the models are identical to the linear models in the original work.
+While the outcome variables in the original linear regression models are the comprehensive parameters (average of the observed four Likert Scale), this section creates individual models for every observed outcome variable by treating them as categorical variables.
+The threshold approach is applied to interpret the logistic regression outcome by the following formula
+$$
+y_{favorability}=
+\left\{
+\begin{array}{ll}
+5(\text{most unfavorable}) & \text{if} \quad  X\beta < c_{4.5}\\
+4(\text{unfavorable}) & \text{if} \quad  X\beta \in (c_{3.5}, c_{4.5}) \\
+3(\text{neutral}) & \text{if} \quad X\beta \in (c_{2.5}, c_{3.5})\\
+2(\text{favorable}) & \text{if} \quad X\beta \in (c_{1.5}, c_{2.5})\\
+1(\text{most favorable}) & \text{if} \quad X\beta > c_{1.5}
+\end{array}
+\right.
+$$
+\newpage
+
+## Results of Extended Hypotheses Testing 
+
+### Hypothesis 1  
+The following Table 2, Figure 2, and Figure 3 are the results of the hypothesis testing. 
+As the estimated coefficients and standard errors show, treatments show different effects on each four outcome variables.
+More intuitively, as Figure 2 shows, most treatments are associated with an odds ratio close to 1, which means that those treatments have not a large effect on the outcome.
+Moreover, as it is discussed in @paper [p.28], "the policy content treatment ... has the strongest and most consistent effects in influencing Japanese opinion of the U.S." especially on the favorability level on the U.S. as a country.
+As the purple point range in the `content1` row of Figure 2 illustrates, policy content treatment is associated with smaller $X\beta{}$.
+By referencing the formula in section 4.2, it can be interpreted that the treatment is associated with the more unfavorable (less favorable) of the Likert scale.
+
+```{r results='asis'}
+stargazer(ext_h1_country, ext_h1_policy, ext_h1_people, ext_h1_trump,
+          ord.intercepts = TRUE,
+          title="polr Model for Hypotheis 1", 
+          dep.var.caption="Outcome Variable:",
+          model.numbers=FALSE,
+          model.names = FALSE,
+          header = FALSE,
+          no.space = TRUE,
+          star.cutoffs = NA,
+          omit.table.layout = "n")
+```
+
+The most notable finding in this analysis is that the intervals between the thresholds of the Likert scale are neither perfectly equal nor extremely unequal separation.
+Figure 3 indicates that the interval between unfavorable and unfavorable is narrower than the ones between other thresholds, meaning that people with `4. unfavorable` view is predicted to be more likely to change to `5 most unfavorable` than `3. neutral` when they receive the same magnitude of treatment.
+However, the validity of the linear regression models in @paper cannot be rejected since the difference in the intervals seem not extreme, although it requires more statistical analysis with the judgment.
+
+In addition, favorability levels are biased among the outcomes.
+Particularly, Japanese people are expected to have a more favorable image for the U.S. country and people than the U.S. policy and President Trump. 
+For example, when the estimated coefficient is 0, Japanese people are predicted to have `2. favorable` view on `countryfav` and `peoplefav` while having `4. unfavorable` view for `trumpfav`. 
+
+
+
+```{r fig.cap="Extended Hypotheis 1 Testing - Coefficients",fig.show="hold", out.width="60%", fig.align='center', warning=FALSE}
+he11
+```
+```{r fig.cap="Extended Hypotheis 1 Testing - Thresholds",fig.show="hold", out.width="70%", fig.align='center',warning=FALSE}
+he12
+```
+
+\newpage
+
+### Hypothesis 2  
+In the @paper, the interaction model of Hypothesis 2 testing shows that the source cue effect is conditional to only the policy content is negative, as it is visualized in Figure 4.
+
+```{r fig.cap="Visualizing Hypothesis 2 of Agadjanian and Horiuchi (2020)", fig.align='center',fig.show="hold", out.width="70%", warning=FALSE}
+ggdraw(add_sub(cowplot::plot_grid(h1plot, h2plot), "Note: The point range is 95% condidence intervals", size = 10))
+```
+
+In the @paper, the interaction model of Hypothesis 2 testing shows that the source cue effect is conditional to only the policy content is negative, as it is visualized in Figure 4.
+For extension, `polr` models are tested. As tables in the figures following show, they are mostly consistent with the results of @paper and Figure 4.
+Especially for the interaction model of source cue and issue salience, Figure 6 and Table 4 clearly illustrate that the effect of source cue is not conditional to the issue salience.
+
+The impact of the interactions differs within the Source x Content models.
+While `countryfav` has a small interaction effect, `policyfav` has a large effect in almost every level of favorability.
+It is also notable that `peoplefav` has an interaction effect more in favorable view conditions, whereas `trumpfav` has an interaction effect more in unfavorable view situations.  
+
+\newpage
+
+```{r fig.cap="Coefficint Plot for the Interaction Model (Source x Content)", fig.show="hold", out.width="50%"}
+ggdraw(add_sub(he21, "Note: The point range is 95% condidence intervals", size = 10))
+ggdraw(add_sub(he22, "Note: The point range is 95% condidence intervals", size = 10))
+ggdraw(add_sub(he23, "Note: The point range is 95% condidence intervals", size = 10))
+ggdraw(add_sub(he24, "Note: The point range is 95% condidence intervals", size = 10))
+```
+
+```{r results='asis'}
+stargazer(ext_h2_country1, ext_h2_policy1, ext_h2_people1, ext_h2_trump1,
+          ord.intercepts = TRUE,
+          title="polr Model for Hypothesis E2 (Source x Content)", 
+          dep.var.caption="Outcome Variable:",
+          model.numbers=FALSE,
+          model.names = FALSE,
+          header = FALSE,
+          no.space = TRUE,
+          star.cutoffs = NA,
+          omit.table.layout = "n")
+```
+
+\newpage
+
+```{r fig.cap="Coefficint Plot for the Interaction Model (Source x Issue)", fig.show="hold", out.width="50%"}
+ggdraw(add_sub(he31, "Note: The point range is 95% condidence intervals", size = 10))
+ggdraw(add_sub(he32, "Note: The point range is 95% condidence intervals", size = 10))
+ggdraw(add_sub(he33, "Note: The point range is 95% condidence intervals", size = 10))
+ggdraw(add_sub(he34, "Note: The point range is 95% condidence intervals", size = 10))
+```
+
+```{r results='asis'}
+stargazer(ext_h2_country2, ext_h2_policy2, ext_h2_people2, ext_h2_trump2,
+          ord.intercepts = TRUE,
+          title="polr Model for Hypothesis E2 (Source x Issue)", 
+          dep.var.caption="Outcome Variable:",
+          model.numbers=FALSE,
+          model.names = FALSE,
+          header = FALSE,
+          no.space = TRUE,
+          star.cutoffs = NA,
+          omit.table.layout = "n")
+```
+
+\newpage
+
+# Conclusion  
+The study by @paper and the extension analysis using proportional odds logistic regression models reach the same conclusion, while the latter points out the concern of the analytic method used in the former work.
+The results suggest that among the effects of source cue, policy content, and issue salience, source policy content has the strongest impact on the foreign image of the U.S., and the source cue effect is conditional to the policy content.  
+
+Therefore, @paper [p.30] and this report conclude that not sending excessively and unnecessarily hostile messages and taking more cooperative stances by the U.S. can still possibly ameliorate foreign public opinion of the U.S. regardless of who the U.S. leader is.  
+
+\newpage
+
+# Bibliography {-}
+<div id="refs"></div>

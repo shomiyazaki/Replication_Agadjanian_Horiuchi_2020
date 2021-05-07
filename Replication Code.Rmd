@@ -20,16 +20,15 @@ knitr::opts_chunk$set(echo = TRUE)
 Since `MASS` and `dplyr` has both `select()` function, there are conflicts. However, I have to use `MASS::polr()` in my extention part, and `stargazer()` shows error in this format unless I change to `library(MASS)` and `polr`. Thus, I used `dplyr::select()` for the `select()` of the original code.  
 
 ```{r library, results='hide', message=FALSE}
-library(tidyverse)
 library(ggthemes)
 library(readxl)
 library(stargazer)
 library(ebal) # ebalance()
 library(broom)
 library(cowplot)
+library(tidyverse)
 library(MASS)
 library(sjPlot)
-library(knitr)
 ```
 
 # step1_estimate_weights
@@ -627,6 +626,7 @@ test1 <- function(data, model, title = NULL, weight = FALSE){
 ```
 
 ## Hypothesis 2   
+
 ```{r}
 test2 <- function(data, model, title = NULL, weight = FALSE){
   
@@ -839,6 +839,7 @@ test2 <- function(data, model, title = NULL, weight = FALSE){
 }
 ```
 
+
 ## Function for Graphs for H1 and H2      
 ```{r}
 make_graphs <- function(data, outcome, weight = FALSE){
@@ -927,6 +928,7 @@ h2out <- lm(as.formula(h2), data = all)
 reg.table <- function(type){
   
 stargazer(h1out, h2out, 
+          title = "Results of Regression Analysis",
           covariate.labels = c("Constant",
                                "Source Cue",
                                "Policy Content",
@@ -1029,6 +1031,20 @@ stargazer(ext_h1_country, ext_h1_policy, ext_h1_people, ext_h1_trump,
 ## Coefficient Plot  
 
 ```{r}
+he11 <- plot_models(ext_h1_country, ext_h1_policy, ext_h1_people, ext_h1_trump,
+            rm.terms = c("2. favorable|1. most favorable",
+                         "3. neutral|2. favorable",
+                         "4. unfavorable|3. neutral",
+                         "5. most unfavorable|4. unfavorable"),
+            vline.color = "gold")+
+  labs(title = paste("Odds Ratios of the Coefficients"),
+       subtitle = paste("Note: The point range is 95% condidence intervals"),
+       x = "Predictors",
+       y = "Odds Ratio")
+he11
+```
+
+```{r}
 ex1mods <- c("ext_h1_country", "ext_h1_policy", "ext_h1_people", "ext_h1_trump")
 
 plot_tab <- data.frame()
@@ -1047,16 +1063,36 @@ colnames(plot_tab) <- c("est", "se", "model", "vars")
 plot_tab$est <- as.numeric(plot_tab$est)
 plot_tab$se <- as.numeric(plot_tab$se)
 
-ggplot(data = plot_tab, aes(x = vars, y = est, color = model)) +
+he12 <- ggplot(data = plot_tab, aes(x = vars, y = est, color = model)) +
   geom_pointrange(aes(ymin = est - 1.96*se, ymax = est + 1.96*se), # 95% confidence interval
                   position = position_dodge(width = 1), fatten = 2, size = 1) +
   geom_pointrange(aes(ymin = est - 2.57*se, ymax = est + 2.57*se), # 99% confidence interval
                   position = position_dodge(width = 1), fatten = 2, size = 0.5) +
-  coord_flip()
+  coord_flip()+
+  scale_colour_manual(values = c("purple", "mediumseagreen", "dodgerblue", "firebrick1"),
+                      breaks = c("ext_h1_country", "ext_h1_people", "ext_h1_policy", "ext_h1_trump"),
+                      labels = c("countryfav", "peoplefav", "policyfav", "trumpfav"))+
+  labs(title = paste("Interval between the Thresholds of Likert Scale"),
+       subtitle = paste("Note: The point range is 99% condidence intervals"),
+       x = "Cutoffs of Likert Scale",
+       y = "Estimated Coefficients")+
+  geom_hline(yintercept = 0, col = "gold", lwd = 1)
+
+he12
 ```
 
 
 ## `polr` for Hypothesis 2  
+
+```{r}
+extlmh21 <- lm(compfav ~ source * content, data = df_ext)
+extlmh22 <- lm(compfav ~ source * issue, data = df_ext)
+h1plot <- plot_model(extlmh21, type = "int") + ylim(2.7, 3.3)
+h2plot <- plot_model(extlmh22, type = "int") + ylim(2.7, 3.3)
+
+h1plot
+h2plot
+```
 
 ### Source x Content  
 ```{r}
@@ -1096,19 +1132,23 @@ stargazer(ext_h2_country1, ext_h2_policy1, ext_h2_people1, ext_h2_trump1,
 
 
 ```{r}
-plot_model(ext_h2_country1, type = "int")
-plot_model(ext_h2_people1, type = "int")
-plot_model(ext_h2_policy1, type = "int")
-plot_model(ext_h2_trump1, type = "int")
+he21 <- plot_model(ext_h2_country1, type = "int")
+he22 <- plot_model(ext_h2_people1, type = "int")
+he23 <- plot_model(ext_h2_policy1, type = "int")
+he24 <- plot_model(ext_h2_trump1, type = "int")
+
+he21$facet$params$nrow <- 1
+he22$facet$params$nrow <- 1
+he23$facet$params$nrow <- 1
+he24$facet$params$nrow <- 1
+
+he21
+he22
+he23
+he24
 ```
 
-```{r}
-extlmh21 <- lm(compfav ~ source * content, data = df_ext)
 
-plot_model(extlmh21, 
-                   type = "int", 
-                   terms = c("source", "content"))
-```
 
 
 
@@ -1117,18 +1157,22 @@ plot_model(extlmh21,
 ext_h2_country2 <- polr(countryfav ~ source * issue,
                      data=df_ext,
                      weights=nwgt,
+                     Hess = TRUE,
                      method = "logistic")
 ext_h2_policy2 <- polr(policyfav ~ source * issue,
                      data=df_ext,
                      weights=nwgt,
+                     Hess = TRUE,
                      method = "logistic")
 ext_h2_people2 <- polr(peoplefav ~ source * issue,
                      data=df_ext,
+                     Hess = TRUE,
                      weights=nwgt,
                      method = "logistic")
 ext_h2_trump2 <- polr(trumpfav ~ source * issue,
                      data=df_ext,
                      weights=nwgt,
+                     Hess = TRUE,
                      method = "logistic")
 
 ```
@@ -1145,14 +1189,56 @@ stargazer(ext_h2_country2, ext_h2_policy2, ext_h2_people2, ext_h2_trump2,
 ```
 
 ```{r}
+he31 <- plot_model(ext_h2_country2, type = "int")
+he32 <- plot_model(ext_h2_people2, type = "int")
+he33 <- plot_model(ext_h2_policy2, type = "int")
+he34 <- plot_model(ext_h2_trump2, type = "int")
+
+he31$facet$params$nrow <- 1
+he32$facet$params$nrow <- 1
+he33$facet$params$nrow <- 1
+he34$facet$params$nrow <- 1
+
+he31
+he32
+he33
+he34
+```
+
+
+```{r}
 rm(list= ls()[!(ls() %in% c("all", 
                             "df_ext", 
                             "g_h1",
                             "g_h2",
                             "reg.table",
                             "h1out",
-                            "h2out"))])
-save.image("codeoutput.Rdata")
+                            "h2out",
+                            "h1plot",
+                            "h2plot",
+                            "he11",
+                            "he12",
+                            "he21",
+                            "he22",
+                            "he23",
+                            "he24",
+                            "he31",
+                            "he32",
+                            "he33",
+                            "he34",
+                            "ext_h1_country",
+                            "ext_h1_policy",
+                            "ext_h1_people", 
+                            "ext_h1_trump",
+                            "ext_h2_country1",
+                            "ext_h2_policy1",
+                            "ext_h2_people1",
+                            "ext_h2_trump1",
+                            "ext_h2_country2",
+                            "ext_h2_policy2", 
+                            "ext_h2_people2",
+                            "ext_h2_trump2"))])
+save.image("tablesfigures.Rdata")
 ```
 
 
