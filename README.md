@@ -15,7 +15,7 @@ I would also sincerely thank Professor Jefferson Gill, Le Bao (Teaching Fellow),
 # Description  
 This is the replication report of the work by Agadjanian and Horiuchi (2020), which finds that "foreign citizens rely more on policy content in transnational opinion formation --- an aspect that past research in this area has overlooked(p.2)." 
 
-After successfully replicating the models and results, this report extends the analysis to examine the validity of the models used in the original work. The `polr` ordered multinomial logistic regression models are applied, and visualized graphically with the confidence intervals, instead of p-value tests. Ultimately, I reach the same conclusion with @paper, while pointing out the concerns for the modeling. 
+After successfully replicating the models and results, this report extends the analysis to examine the validity of the models used in the original work. The `polr` ordered multinomial logistic regression models are applied, and visualized graphically with the confidence intervals, instead of p-value tests. Ultimately, I reach the same conclusion with the original work, while pointing out the concerns for the modeling. 
   
  This paper serves as one of the validation analyses of Agadjanian and Horiuchi (2020). 
 
